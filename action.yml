@@ -1,0 +1,20 @@
+name: Flux Helm Preview
+description: Render and diff Flux GitOps kustomizations and helm releases to preview PR changes
+author: Tobias Habermann
+inputs:
+  helm:
+    description: 'Render HelmRelease resources'
+    required: false
+    default: "false"
+  kustomizations:
+    description: 'List of kustomizations to render (newline separated)'
+    required: true
+  repo-a:
+    description: 'Path to repository A'
+    required: true
+  repo-b:
+    description: 'Path to repository B'
+    required: true
+runs:
+  using: node16
+  main: invoke-binary.js
