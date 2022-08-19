@@ -2,7 +2,7 @@ on:
   push: {}
 jobs:
   deploy:
-    name: Release^
+    name: Release
     runs-on: ubuntu-latest    
     steps:
     - uses: actions/checkout@master
