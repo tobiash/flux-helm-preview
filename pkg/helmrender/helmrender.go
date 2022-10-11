@@ -95,6 +95,7 @@ func (r *HelmRepo) RenderAllCharts() (resmap.ResMap, error) {
 		tasks[i] = RenderTask{
 			values: values,
 			chart:  h.Spec.Chart.Spec.Chart,
+			version: h.Spec.Chart.Spec.Version,
 			repo: repo.Entry{
 				URL:  url,
 				Name: fmt.Sprintf("%s-%s", h.GetNamespace(), h.GetName()),

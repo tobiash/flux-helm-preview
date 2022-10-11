@@ -32,6 +32,7 @@ type Runner struct {
 type RenderTask struct {
 	values          chartutil.Values
 	chart           string
+	version         string
 	repo            repo.Entry
 	releaseName     string
 	namespace       string
@@ -95,6 +96,7 @@ func (r *Runner) renderChart(ctx context.Context, t *RenderTask) (resmap.ResMap,
 	if err := r.getAndUpdateRepo(&t.repo); err != nil {
 		return nil, err
 	}
+	install.ChartPathOptions.Version = t.version
 	install.ChartPathOptions.RepoURL = t.repo.URL
 	install.ChartPathOptions.Username = t.repo.Username
 	install.ChartPathOptions.Password = t.repo.Password
