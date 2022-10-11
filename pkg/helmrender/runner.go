@@ -165,5 +165,6 @@ func (r *Runner) getAndUpdateRepo(entry *repo.Entry) error {
 	if err != nil {
 		return err
 	}
+	r.repos.Store(entry.URL, true) // TODO
 	return nil
 }

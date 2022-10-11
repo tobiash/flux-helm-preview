@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"github.com/go-logr/logr"
 	githubactions "github.com/sethvargo/go-githubactions"
