@@ -28,6 +28,7 @@ type Action struct {
 	cfg    Config
 	log    logr.Logger
 	action *githubactions.Action
+	helmRunner *helmrender.Runner
 }
 
 func NewFromInputs(action *githubactions.Action) (*Config, error) {
@@ -58,6 +59,9 @@ func NewAction(ctx context.Context, cfg *Config, ghaction *githubactions.Action)
 		cfg:    *cfg,
 		log:    log,
 		action: ghaction,
+	}
+	if cfg.Helm {
+		action.helmRunner = helmrender.NewRunner(cli.New(), log)
 	}
 	return &action, nil
 }
@@ -90,10 +94,10 @@ func (a *Action) loadRepo(repo string) (*render.Render, error) {
 		}
 	}
 
-	if !a.cfg.Helm {
+	if a.helmRunner == nil {
 		return r, nil
 	}
-	helm, err := helmrender.ParseHelmRepo(r, cli.New(), a.log)
+	helm, err := helmrender.ParseHelmRepo(r, a.helmRunner, a.log)
 	if err != nil {
 		return nil, err
 	}

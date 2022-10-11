@@ -1,32 +1,23 @@
 package helmrender
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	v2 "github.com/fluxcd/helm-controller/api/v2beta1"
 	"github.com/fluxcd/pkg/runtime/transform"
 	source "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/go-logr/logr"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/tobiash/flux-helm-preview/pkg/render"
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/repo"
 	"helm.sh/helm/v3/pkg/strvals"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"sigs.k8s.io/kustomize/api/hasher"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/resource"
 	"sigs.k8s.io/kustomize/kyaml/resid"
@@ -40,16 +31,14 @@ var CONFIGMAP_GVK = resid.NewGvk("", "v1", "ConfigMap")
 
 type HelmRepo struct {
 	render.Render
-	settings     *cli.EnvSettings
-	httpClient   *retryablehttp.Client
+	runner       *Runner
 	scheme       *runtime.Scheme
 	releases     []v2.HelmRelease
 	repositories []source.HelmRepository
 	logger       logr.Logger
-	storage      repo.File
 }
 
-func ParseHelmRepo(r *render.Render, settings *cli.EnvSettings, log logr.Logger) (*HelmRepo, error) {
+func ParseHelmRepo(r *render.Render, runner *Runner, log logr.Logger) (*HelmRepo, error) {
 	sch := runtime.NewScheme()
 	_ = scheme.AddToScheme(sch)
 
@@ -64,8 +53,7 @@ func ParseHelmRepo(r *render.Render, settings *cli.EnvSettings, log logr.Logger)
 	repo.Render = *r
 	repo.scheme = sch
 	repo.logger = log
-	repo.settings = settings
-	repo.httpClient = retryablehttp.NewClient()
+	repo.runner = runner
 
 	for _, res := range r.Resources() {
 		log.Info("found manifest", "group", res.GetGvk().Group, "kind", res.GetGvk().Kind, "version", res.GetGvk().Version)
@@ -93,17 +81,32 @@ func ParseHelmRepo(r *render.Render, settings *cli.EnvSettings, log logr.Logger)
 }
 
 func (r *HelmRepo) RenderAllCharts() (resmap.ResMap, error) {
-	res := resmap.New()
-	for _, h := range r.releases {
-		rendered, err := r.RenderChart(h)
+	tasks := make([]RenderTask, len(r.releases))
+	for i, h := range r.releases {
+		values, err := r.composeValues(h)
+		if err != nil {
+			return nil, fmt.Errorf("error composing values: %w", err)
+		}
+		url, err := r.findHelmChartUrl(&h)
 		if err != nil {
 			return nil, err
 		}
-		if err = res.AppendAll(rendered); err != nil {
-			return nil, err
+
+		tasks[i] = RenderTask{
+			values: values,
+			chart:  h.Spec.Chart.Spec.Chart,
+			repo: repo.Entry{
+				URL:  url,
+				Name: fmt.Sprintf("%s-%s", h.GetNamespace(), h.GetName()),
+			},
+			releaseName:     h.GetReleaseName(),
+			skipCRDs:        h.Spec.GetInstall().SkipCRDs,
+			replace:         h.Spec.GetInstall().Replace,
+			disableHooks:    h.Spec.GetInstall().DisableHooks,
+			createNamespace: h.Spec.GetInstall().CreateNamespace,
 		}
 	}
-	return res, nil
+	return r.runner.RenderCharts(context.Background(), tasks)
 }
 
 func (r *HelmRepo) composeValues(hr v2.HelmRelease) (chartutil.Values, error) {
@@ -176,124 +179,22 @@ func (r *HelmRepo) composeValues(hr v2.HelmRelease) (chartutil.Values, error) {
 	return transform.MergeMaps(result, hr.GetValues()), nil
 }
 
-func (r *HelmRepo) RenderChart(hr v2.HelmRelease) (resmap.ResMap, error) {
-	values, err := r.composeValues(hr)
-	if err != nil {
-		return nil, fmt.Errorf("error composing values: %w", err)
+func (r *HelmRepo) findHelmChartUrl(source *v2.HelmRelease) (string, error) {
+	namespace := source.Spec.Chart.Spec.SourceRef.Namespace
+	if namespace == "" {
+		namespace = source.GetNamespace()
 	}
-
-	hc := r.buildHelmChartFromTemplate(&hr)
-	if err != nil {
-		return nil, fmt.Errorf("error loading chart: %w", err)
-	}
-
-	cfg := new(action.Configuration)
-	cfg.Init(r.settings.RESTClientGetter(), hr.GetReleaseNamespace(), os.Getenv("HELM_DRIVER"), func(format string, args ...interface{}) {
-		r.logger.Info(fmt.Sprintf(format, args...))
-	})
-
-	install := action.NewInstall(cfg)
-	install.DryRun = true
-	install.ClientOnly = true
-	install.CreateNamespace = hr.Spec.GetInstall().CreateNamespace
-	install.ReleaseName = hr.GetReleaseName()
-	install.SkipCRDs = hr.Spec.GetInstall().SkipCRDs
-	install.Replace = hr.Spec.GetInstall().Replace
-	install.DisableHooks = hr.Spec.GetInstall().DisableHooks
-	install.APIVersions = []string{}
-	install.IncludeCRDs = true
-
-	chart, err := r.loadHelmChart(hc, install)
-
-	if err != nil {
-		return nil, err
-	}
-
-	out := new(bytes.Buffer)
-	rel, err := install.Run(chart, values)
-
-	if rel != nil {
-		var manifests bytes.Buffer
-		fmt.Fprintln(&manifests, strings.TrimSpace(rel.Manifest))
-		if !install.DisableHooks {
-			for _, m := range rel.Hooks {
-				fmt.Fprintf(&manifests, "---\n# Source: %s\n%s\n", m.Path, m.Manifest)
-			}
-		}
-		fmt.Fprintf(out, "%s", manifests.String())
-	}
-	return resmap.NewFactory(resource.NewFactory(&hasher.Hasher{})).NewResMapFromBytes(out.Bytes())
-}
-
-func (r *HelmRepo) buildHelmChartFromTemplate(hr *v2.HelmRelease) *source.HelmChart {
-	template := hr.Spec.Chart
-	return &source.HelmChart{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      hr.GetHelmChartName(),
-			Namespace: hr.Spec.Chart.GetNamespace(hr.Namespace),
-		},
-		Spec: source.HelmChartSpec{
-			Chart:   template.Spec.Chart,
-			Version: template.Spec.Version,
-			SourceRef: source.LocalHelmChartSourceReference{
-				Name: template.Spec.SourceRef.Name,
-				Kind: template.Spec.SourceRef.Kind,
-			},
-			Interval:          template.GetInterval(hr.Spec.Interval),
-			ReconcileStrategy: template.Spec.ReconcileStrategy,
-			ValuesFiles:       template.Spec.ValuesFiles,
-			ValuesFile:        template.Spec.ValuesFile,
-		},
-	}
-}
-
-func (r *HelmRepo) updateRepo(hr *source.HelmRepository) error {
-	entry := repo.Entry{
-		Name: fmt.Sprintf("%s-%s", hr.GetNamespace(), hr.GetName()),
-		URL:  hr.Spec.URL,
-	}
-	chartRepo, err := repo.NewChartRepository(&entry, getter.All(r.settings))
-	if err != nil {
-		return err
-	}
-	chartRepo.CachePath = r.settings.RepositoryCache
-	_, err = chartRepo.DownloadIndexFile()
-	if err != nil {
-		return err
-	}
-	if r.storage.Has(entry.Name) {
-		return nil
-	}
-	r.storage.Update(&entry)
-	err = r.storage.WriteFile(r.settings.RepositoryConfig, 0o644)
-	if err != nil {
-	 	return err
-	}
-	return nil
-}
-
-func (r *HelmRepo) loadHelmChart(source *source.HelmChart, client *action.Install) (*chart.Chart, error) {
-	switch source.Spec.SourceRef.Kind {
+	switch source.Spec.Chart.Spec.SourceRef.Kind {
 	case "HelmRepository":
 		for _, hr := range r.repositories {
-			if hr.GetNamespace() == source.GetNamespace() && hr.GetName() == source.Spec.SourceRef.Name {
-				if err := r.updateRepo(&hr); err != nil {
-					return nil, err
-				}
-				client.ChartPathOptions.RepoURL = hr.Spec.URL
-				r.settings.Debug = true
-				cp, err := client.ChartPathOptions.LocateChart(source.Spec.Chart, r.settings)
-				if err != nil {
-					return nil, fmt.Errorf("error locating chart: %w", err)
-				}
-				r.logger.Info("Loaded chart from repo", "chart", source.Spec.Chart, "repo", hr.Spec.URL, "path", cp)
-				return loader.Load(cp)
+			if hr.GetNamespace() == namespace && hr.GetName() == source.Spec.Chart.Spec.SourceRef.Name {
+				return hr.Spec.URL, nil
 			}
 		}
 	default:
-		return nil, fmt.Errorf("unsupported source kind '%s'", source.Spec.SourceRef.Kind)
+		return "", fmt.Errorf("unsupported source kind '%s'", source.Spec.Chart.Spec.SourceRef.Kind)
 	}
-	return nil, fmt.Errorf("unable to find source '%s'", source.Spec.SourceRef.Name)
+	return "", fmt.Errorf("unable to find source '%s'", source.Spec.Chart.Spec.SourceRef.Name)
 }
 
 func (r *HelmRepo) findResource(gvk resid.Gvk, namespacedName types.NamespacedName, to interface{}) (bool, error) {
