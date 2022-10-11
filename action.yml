@@ -19,7 +19,7 @@ inputs:
     description: 'Write markdown diff comment to a file'
     required: false
     default: ""
-  markdownTemplate:
+  markdown-template:
     description: 'Template for markdown output'
     required: false
     default: |-
