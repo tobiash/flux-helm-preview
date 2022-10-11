@@ -15,6 +15,18 @@ inputs:
   repo-b:
     description: 'Path to repository B'
     required: true
+  write-markdown:
+    description: 'Write markdown diff comment to a file'
+    required: false
+    default: ""
+  markdownTemplate:
+    description: 'Template for markdown output'
+    required: false
+    default: |-
+      # Flux Helm Preview
+      ```diff
+      {{ .Diff }}
+      ```
 runs:
   using: node16
   main: invoke_binary.js
