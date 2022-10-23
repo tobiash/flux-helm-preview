@@ -27,6 +27,10 @@ inputs:
       ```diff
       {{ .Diff }}
       ```
+  filter:
+    description: KIO filters to apply to rendered YAML
+    required: false
+    default: ""
 runs:
   using: node16
   main: invoke_binary.js

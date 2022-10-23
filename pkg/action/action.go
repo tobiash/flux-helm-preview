@@ -12,10 +12,13 @@ import (
 	"github.com/go-logr/logr"
 	githubactions "github.com/sethvargo/go-githubactions"
 	"github.com/tobiash/flux-helm-preview/pkg/diff"
+	"github.com/tobiash/flux-helm-preview/pkg/filter"
 	"github.com/tobiash/flux-helm-preview/pkg/helmrender"
 	"github.com/tobiash/flux-helm-preview/pkg/render"
+	"golang.org/x/sync/errgroup"
 	"helm.sh/helm/v3/pkg/cli"
 	"sigs.k8s.io/kustomize/kyaml/filesys"
+	"sigs.k8s.io/kustomize/kyaml/yaml"
 )
 
 type Config struct {
@@ -25,6 +28,7 @@ type Config struct {
 	RepoB            string
 	WriteMarkdown    string
 	MarkdownTemplate string
+	Filter           string
 }
 
 type Action struct {
@@ -33,6 +37,7 @@ type Action struct {
 	log        logr.Logger
 	action     *githubactions.Action
 	helmRunner *helmrender.Runner
+	filter     *filter.FilterConfig
 }
 
 type MarkdownContext struct {
@@ -62,6 +67,7 @@ func NewFromInputs(action *githubactions.Action) (*Config, error) {
 	}
 	cfg.WriteMarkdown = action.GetInput("write-markdown")
 	cfg.MarkdownTemplate = action.GetInput("markdown-template")
+	cfg.Filter = action.GetInput("filter")
 	return cfg, nil
 }
 
@@ -76,19 +82,35 @@ func NewAction(ctx context.Context, cfg *Config, ghaction *githubactions.Action)
 	if cfg.Helm {
 		action.helmRunner = helmrender.NewRunner(cli.New(), log)
 	}
+	if cfg.Filter != "" {
+		m := &filter.FilterConfig{}
+		if err := yaml.Unmarshal([]byte(cfg.Filter), m); err != nil {
+			return nil, err
+		}
+		action.filter = m
+	}
 	return &action, nil
 }
 
-func (a *Action) Run() error {
-	repoA, err := a.loadRepo(a.cfg.RepoA)
-	if err != nil {
-		return err
+func (a *Action) renderFn(repo string, out *render.Render) func () error {
+	return func() error {
+		var err error
+		out, err = a.loadRepo(repo)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	repoB, err := a.loadRepo(a.cfg.RepoB)
-	if err != nil {
-		return err
-	}
+}
 
+func (a *Action) Run() error {
+	g, _ := errgroup.WithContext(context.Background())
+	var repoA, repoB *render.Render
+	g.Go(a.renderFn(a.cfg.RepoA, repoA))
+	g.Go(a.renderFn(a.cfg.RepoB, repoB))
+	if err := g.Wait(); err != nil {
+		return err
+	}
 	var buf bytes.Buffer
 	if err := diff.Diff(repoA, repoB, &buf); err != nil {
 		return err
@@ -142,6 +164,13 @@ func (a *Action) loadRepo(repo string) (*render.Render, error) {
 	}
 	if err = r.AppendAll(rc); err != nil {
 		return nil, err
+	}
+	if a.filter != nil {
+		for _, f := range a.filter.Filters {
+			if err := r.ApplyFilter(f.Filter); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return r, nil
