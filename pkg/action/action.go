@@ -92,10 +92,10 @@ func NewAction(ctx context.Context, cfg *Config, ghaction *githubactions.Action)
 	return &action, nil
 }
 
-func (a *Action) renderFn(repo string, out *render.Render) func () error {
+func (a *Action) renderFn(repo string, out **render.Render) func () error {
 	return func() error {
 		var err error
-		out, err = a.loadRepo(repo)
+		*out, err = a.loadRepo(repo)
 		if err != nil {
 			return err
 		}
@@ -106,8 +106,8 @@ func (a *Action) renderFn(repo string, out *render.Render) func () error {
 func (a *Action) Run() error {
 	g, _ := errgroup.WithContext(context.Background())
 	var repoA, repoB *render.Render
-	g.Go(a.renderFn(a.cfg.RepoA, repoA))
-	g.Go(a.renderFn(a.cfg.RepoB, repoB))
+	g.Go(a.renderFn(a.cfg.RepoA, &repoA))
+	g.Go(a.renderFn(a.cfg.RepoB, &repoB))
 	if err := g.Wait(); err != nil {
 		return err
 	}
