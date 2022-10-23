@@ -1,23 +1,16 @@
 package main
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
 
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/yaml.v2"
-	"sigs.k8s.io/kustomize/kyaml/filesys"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zerologr"
 	"github.com/rs/zerolog"
 	helmcli "helm.sh/helm/v3/pkg/cli"
 
-	"github.com/tobiash/flux-helm-preview/pkg/diff"
-	"github.com/tobiash/flux-helm-preview/pkg/filter"
-	"github.com/tobiash/flux-helm-preview/pkg/helmrender"
-	"github.com/tobiash/flux-helm-preview/pkg/render"
+	"github.com/tobiash/flux-helm-preview/pkg/preview"
 )
 
 
@@ -40,7 +33,6 @@ var (
 	diffPathA = diffCmd.Arg("a", "First path.").Required().ExistingDir()
 	diffPathB = diffCmd.Arg("b", "Second path.").Required().ExistingDir()
 
-	filters *filter.FilterConfig
 )
 
 func helmSettings() *helmcli.EnvSettings {
@@ -57,40 +49,6 @@ func helmSettings() *helmcli.EnvSettings {
 	return settings
 }
 
-func loadRepo(log logr.Logger, repoPath string, helmRunner *helmrender.Runner) (*render.Render, error) {
-	r := render.NewDefaultRender(log)
-	for _, k := range *kustomizations {
-		err := r.AddKustomization(filesys.MakeFsOnDisk(), filepath.Join(repoPath, k))
-		if err != nil {
-			return nil, fmt.Errorf("failed to add kustomization: %w", err)
-		}
-	}
-	if helmRunner != nil {
-		helm, err := helmrender.ParseHelmRepo(r, helmRunner, log)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse helm repo: %w", err)
-		}
-		rc, err := helm.RenderAllCharts()
-		if err != nil {
-			return nil, fmt.Errorf("failed to render helm charts: %w", err)
-		}
-		if err = r.AppendAll(rc); err != nil {
-			return nil, err
-		}
-	}
-
-
-	if filters != nil {
-		for _, f := range filters.Filters {
-			if err := r.ApplyFilter(f.Filter); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return r, nil
-}
-
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnixMs
 	zerologr.NameFieldName = "logger"
@@ -100,39 +58,32 @@ func main() {
 	zl = zl.With().Caller().Timestamp().Logger().Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	var log logr.Logger = zerologr.New(&zl)
 
-	var helmRunner *helmrender.Runner
-
 	kingpin.CommandLine.HelpFlag.Short('h')
-
 	cmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
+	opts := []preview.Opt{
+		preview.WithLogger(log),
+		preview.WithKustomizations(*kustomizations),
+	}
+
 	if renderHelm != nil && *renderHelm {
-		helmRunner = helmrender.NewRunner(helmSettings(), log)
+		opts = append(opts, preview.WithHelm(helmSettings()))
 	}
 
 	if *filtersFile != nil {
-		m := &filter.FilterConfig{}
-		d := yaml.NewDecoder(*filtersFile)
-		err := d.Decode(m)
-		app.FatalIfError(err, "error decoding modifier")
-		filters = m
+		opts = append(opts, preview.WithFilterFile(*filtersFile))
 	}
+
+	p, err := preview.New(opts...)
+	app.FatalIfError(err, "error creating preview")
 
 	switch cmd {
 	case renderCmd.FullCommand():
-		r, err := loadRepo(log, *renderPath, helmRunner)
-		app.FatalIfError(err, "error loading repo")
-		yaml, err := r.AsYaml()
-		app.FatalIfError(err, "error transforming to yaml")
-		_, err = os.Stdout.Write(yaml)
-		app.FatalIfError(err, "error writing output")
+		err := p.Render(*renderPath, os.Stdout)
+		app.FatalIfError(err, "error rendering")
 
 	case diffCmd.FullCommand():
-		a, err := loadRepo(log, *diffPathA, helmRunner)
-		app.FatalIfError(err, "error loading first path")
-		b, err := loadRepo(log, *diffPathB, helmRunner)
-		app.FatalIfError(err, "error loading second path")
-		err = diff.Diff(a, b, os.Stdout)
+		err := p.Diff(*diffPathA, *diffPathB, os.Stdout)
 		app.FatalIfError(err, "error creating diff")
 	}
 }
