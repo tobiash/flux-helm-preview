@@ -16,6 +16,7 @@ var Filters = map[string]func() kio.Filter{
 	"GrepFilter":    func() kio.Filter { return &kiofilters.GrepFilter{} },
 	"MatchModifier": func() kio.Filter { return &kiofilters.MatchModifyFilter{} },
 	"Modifier":      func() kio.Filter { return &kiofilters.Modifier{} },
+	"LabelRemover":  func() kio.Filter { return &LabelRemover{} },
 }
 
 type KFilter struct {
