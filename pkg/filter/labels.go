@@ -8,20 +8,30 @@ import (
 var _ kio.Filter = &LabelRemover{}
 
 type LabelRemover struct {
-	Kind   string   `yaml:"kind,omitempty"`
-	Labels []string `yaml:"labels"`
+	Kind   string     `yaml:"kind,omitempty"`
+	Labels []string   `yaml:"labels"`
+	Paths  [][]string `yaml:"paths"`
 }
 
 func (lr LabelRemover) Filter(input []*yaml.RNode) ([]*yaml.RNode, error) {
+	lps := lr.Paths
+	if len(lps) == 0 {
+		lps = [][]string{
+			{"metadata", "labels"},
+			{"spec", "template", "metadata", "labels"},
+		}
+	}
 	for i := range input {
 		node := input[i]
 		for _, l := range lr.Labels {
-		  _, err := node.Pipe(
-				&yaml.PathGetter{Path: []string{ "metadata", "labels" }},
-				&yaml.FieldClearer{Name: l},
-			)
-			if err != nil {
-				return nil, err
+			for _, lp := range lps {
+				_, err := node.Pipe(
+					&yaml.PathGetter{Path: lp},
+					&yaml.FieldClearer{Name: l},
+				)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
