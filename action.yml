@@ -56,8 +56,7 @@ runs:
         GOARCH: amd64
     - name: Flux Helm Preview
       id: fhp
-      run: ./build/fhp
-      working-directory: ${{ github.action_path }}
+      run: ${{ github.action_path }}/build/fhp
       shell: bash
       env:
         INPUT_HELM: ${{ inputs.helm }}
