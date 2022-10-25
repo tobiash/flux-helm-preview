@@ -1,0 +1,60 @@
+name: Binary Release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        required: true
+        description: Tag to release
+      target_branch:
+        required: false
+        description: Target branch
+        default: main
+  workflow_call:
+    secrets:
+      APP_ID:
+        required: true
+      PRIVATE_KEY:
+        required: true
+    inputs:
+      tag:
+        type: string
+        required: true
+        description: Tag to release
+jobs:
+  binary-release:
+    name: Binary release
+    runs-on: ubuntu-latest
+    env:
+      GO111MODULE: on
+      CGO_ENABLED: 0
+      GOOS: linux
+      GOARCH: amd64
+    steps:
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.APP_ID }}
+          private_key: ${{ secrets.PRIVATE_KEY }}
+      - uses: actions/checkout@master
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.18.x
+          cache: true
+          cache-dependency-path: go.sum
+      - run:  go build -ldflags "-s -w -extldflags '-static'" -o build/fhp ./cmd/action && strip build/fhp
+      - name: Run UPX
+        uses: crazy-max/ghaction-upx@v2
+        with:
+          version: latest
+          files: |
+            ./build/fhp
+      - run: cp cmd/action/{action.yml,invoke_binary.js} build/
+      - name: Deploy
+        uses: s0/git-publish-subdir-action@develop
+        env:
+          REPO: tobiash/flux-helm-preview-action
+          BRANCH: ${{ inputs.target_branch }}
+          TAG: ${{ inputs.tag }}
+          FOLDER: build
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
