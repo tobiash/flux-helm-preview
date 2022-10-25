@@ -50,3 +50,11 @@ runs:
       run: go run main.go
       working-directory: ${{ github.action_path }}/cmd/action
       shell: bash
+      env:
+        INPUT_HELM: ${{ inputs.helm }}
+        INPUT_KUSTOMIZATIONS: ${{ inputs.kustomizations }}
+        INPUT_REPO-A: ${{ inputs.repo-a }}
+        INPUT_REPO-B: ${{ inputs.repo-b }}
+        INPUT_WRITE-MARKDOWN: ${{ inputs.write-markdown }}
+        INPUT_MARKDOWN-TEMPLATE: ${{ inputs.markdown-template }}
+        INPUT_FILTER: ${{ inputs.filter }}
