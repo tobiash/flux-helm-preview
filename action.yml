@@ -38,6 +38,9 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - uses: actions/setup-go@v3
+      with:
+        go-version: '>=1.18.0'
     - name: Download Go modules
       run: go mod download
       working-directory: ${{ github.action_path }}
