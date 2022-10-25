@@ -13,6 +13,8 @@ on:
     secrets:
       APP_ID:
         required: true
+      APP_INSTALLATION_ID:
+        required: true
       PRIVATE_KEY:
         required: true
     inputs:
@@ -36,6 +38,7 @@ jobs:
         with:
           app_id: ${{ secrets.APP_ID }}
           private_key: ${{ secrets.PRIVATE_KEY }}
+          installation_id: ${{ secrets.APP_INSTALLATION_ID }}
       - uses: actions/checkout@master
       - uses: actions/setup-go@v3
         with:
