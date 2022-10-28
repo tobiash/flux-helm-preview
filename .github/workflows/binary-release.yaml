@@ -56,7 +56,7 @@ jobs:
       - name: Deploy
         uses: s0/git-publish-subdir-action@develop
         env:
-          REPO: tobiash/flux-helm-preview-action
+          REPO: https://github.com/tobiash/flux-helm-preview-action.git
           BRANCH: ${{ inputs.target_branch }}
           TAG: ${{ inputs.tag }}
           FOLDER: build
