@@ -58,11 +58,9 @@ jobs:
           files: |
             ./build/fhp
       - run: cp cmd/action/{action.yml,invoke_binary.js} build/
-      - uses: actions/setup-git@v2
-        with:
-          user_name: fhp-release-bot
-          user_email: fhp-release-bot@bot
       - run: |-
+          git config --global user.name "fhp-release-bot"
+          git config --global user.email "fhp-release-bot@fhp"
           git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/tobiash/flux-helm-preview-action.git release
           cd release
           if ! git rev-parse --verify ${{ inputs.target_branch }} >/dev/null 2>&1; then
