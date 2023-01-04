@@ -63,9 +63,15 @@ jobs:
           user_name: fhp-release-bot
           user_email: fhp-release-bot@bot
       - run: |-
-          git clone --branch ${{ inputs.target_branch }} https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ secrets.RELEASE_REPO }}.git release
-          cp -r build/* release/
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/tobiash/flux-helm-preview-action.git release
           cd release
+          if ! git rev-parse --verify ${{ inputs.target_branch }} >/dev/null 2>&1; then
+            git checkout -b ${{ inputs.target_branch }}
+          else
+            git checkout ${{ inputs.target_branch }}
+          fi
+          git checkout -b ${{ inputs.target_branch }}
+          cp -r ../build/* release/
           git add .
           git commit -m "Build release ${{ inputs.tag }}"
           git tag "${{ inputs.tag }}"
