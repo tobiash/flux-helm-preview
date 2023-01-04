@@ -22,6 +22,11 @@ on:
         type: string
         required: true
         description: Tag to release
+      target_branch:
+        type: string
+        required: false
+        description: Target branch
+        default: main
 jobs:
   binary-release:
     name: Binary release
@@ -53,11 +58,15 @@ jobs:
           files: |
             ./build/fhp
       - run: cp cmd/action/{action.yml,invoke_binary.js} build/
-      - name: Deploy
-        uses: s0/git-publish-subdir-action@develop
-        env:
-          REPO: https://github.com/tobiash/flux-helm-preview-action.git
-          BRANCH: ${{ inputs.target_branch }}
-          TAG: ${{ inputs.tag }}
-          FOLDER: build
-          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+      - run: actions/setup-git@v2
+        with:
+          user_name: fhp-release-bot
+          user_email: fhp-release-bot@bot
+      - run: |-
+          git clone --branch ${{ inputs.target_branch }} https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ secrets.RELEASE_REPO }}.git release
+          cp -r build/* release/
+          cd release
+          git add .
+          git commit -m "Build release ${{ inputs.tag }}"
+          git tag "${{ inputs.tag }}"
+          git push origin HEAD:${{ inputs.target_branch }} --tags 
