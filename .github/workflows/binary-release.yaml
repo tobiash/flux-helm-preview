@@ -61,7 +61,7 @@ jobs:
       - run: |-
           git config --global user.name "fhp-release-bot"
           git config --global user.email "fhp-release-bot@fhp"
-          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/tobiash/flux-helm-preview-action.git release
+          git clone https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/tobiash/flux-helm-preview-action.git release
           cd release
           if ! git rev-parse --verify ${{ inputs.target_branch }} >/dev/null 2>&1; then
             git checkout -b ${{ inputs.target_branch }}
