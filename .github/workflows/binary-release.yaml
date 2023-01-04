@@ -69,7 +69,7 @@ jobs:
             git checkout ${{ inputs.target_branch }}
           fi
           git checkout -b ${{ inputs.target_branch }}
-          cp -r ../build/* release/
+          cp -r ../build/* .
           git add .
           git commit -m "Build release ${{ inputs.tag }}"
           git tag "${{ inputs.tag }}"
