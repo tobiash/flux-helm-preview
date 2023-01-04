@@ -58,7 +58,7 @@ jobs:
           files: |
             ./build/fhp
       - run: cp cmd/action/{action.yml,invoke_binary.js} build/
-      - run: actions/setup-git@v2
+      - uses: actions/setup-git@v2
         with:
           user_name: fhp-release-bot
           user_email: fhp-release-bot@bot
