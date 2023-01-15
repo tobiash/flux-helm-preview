@@ -2,9 +2,9 @@ name: Binary Release
 on:
   workflow_dispatch:
     inputs:
-      tag:
+      version:
         required: true
-        description: Tag to release
+        description: Version to release
       target_branch:
         required: false
         description: Target branch
@@ -18,10 +18,10 @@ on:
       PRIVATE_KEY:
         required: true
     inputs:
-      tag:
+      version:
         type: string
         required: true
-        description: Tag to release
+        description: Version to release
       target_branch:
         type: string
         required: false
@@ -71,6 +71,5 @@ jobs:
           git checkout -b ${{ inputs.target_branch }}
           cp -r ../build/* .
           git add .
-          git commit -m "Build release ${{ inputs.tag }}"
-          git tag "${{ inputs.tag }}"
-          git push origin HEAD:${{ inputs.target_branch }} --tags 
+          git commit -m "chore: Build release ${{ inputs.version }}" -m "Release-As: ${{ inputs.version }}"
+          git push origin HEAD:${{ inputs.target_branch }}
