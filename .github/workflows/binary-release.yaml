@@ -68,7 +68,6 @@ jobs:
           else
             git checkout ${{ inputs.target_branch }}
           fi
-          git checkout -b ${{ inputs.target_branch }}
           cp -r ../build/* .
           git add .
           git commit -m "chore: Build release ${{ inputs.version }}" -m "Release-As: ${{ inputs.version }}"
